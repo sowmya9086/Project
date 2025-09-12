@@ -1,0 +1,52 @@
+# Ingress-NGINX Helm Values (Customized for AWS NLB + Security Best Practices)
+
+controller:
+  image:
+    repository: image-repo/ingress-nginx-controller   # Custom image repo for ingress-nginx controller
+    tag: v1.2.1                                      # Update image tag for customized image
+    digest: ""                                       # Optional: Use image digest for immutability
+    pullPolicy: Always                               # Always pull latest image on deploy
+
+    # Security Context (www-data -> uid 101)
+    runAsUser: 101
+    allowPrivilegeEscalation: true                   # Allow container to gain more privileges (set to false if possible)
+
+  replicaCount: 1                                    # Number of controller replicas (set >1 for HA)
+  nodeSelector:
+    cluster: resources                               # Ensures pods are scheduled on specific nodes with label "cluster=resources"
+
+  updateStrategy:
+    rollingUpdate:
+      maxUnavailable: 0                              # Ensures no pods are unavailable during update
+    type: RollingUpdate
+
+  allowSnippetAnnotations: true                      # Allow custom snippets via annotations
+  enableAnnotationValidations: false                 # Disable validation of custom annotations
+
+  admissionWebhooks:
+    enabled: false                                   # Disable admission webhooks (enable in prod if needed)
+
+  service:
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-backend-protocol: tcp
+      service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+      service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    type: LoadBalancer                               # Expose ingress controller via AWS NLB
+    loadBalancerSourceRanges:
+      - 0.0.0.0/0                                    # WARNING: open to all. Restrict to VPN/CIDR in prod (e.g., 1.2.3.4/24)
+    externalTrafficPolicy: Local                     # Preserve client source IP
+
+  config:                                            # Custom nginx/lua configuration
+    annotations-risk-level: "Critical"               # Example metadata
+    http-snippet: |                                  # Inject raw HTTP snippet
+      map $remote_user $user {
+        default $remote_user;
+      }
+      lua_need_request_body on;
+    server-snippet: |                                # Inject at server block level
+      client_body_buffer_size 1024m;
+    location-snippet: |                              # Inject at location block level
+      client_body_buffer_size 1024m;
+    use-forwarded-headers: "true"                    # Trust X-Forwarded-* headers
+    plugins: "audit_logging"                         # Example custom plugin
+    skip-access-log-urls: "~^/auth/resources/,~*.(html|ico|css|js|gif|jpg|jpeg|png|svg|woff|ttf|eot)"
