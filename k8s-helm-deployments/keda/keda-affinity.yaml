@@ -1,0 +1,10 @@
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 1
+      preference:
+        matchExpressions:
+        - key: keda
+          operator: In
+          values:
+          - resources
